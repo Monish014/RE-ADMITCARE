@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:15-alpine
+    container_name: readmitcare-db
+    environment:
+      POSTGRES_DB: readmitcare
+      POSTGRES_USER: readmitcare
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U readmitcare -d readmitcare"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - readmitcare-network
+    restart: unless-stopped
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: readmitcare-backend
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql+asyncpg://readmitcare:${DB_PASSWORD:-dev_password}@db:5432/readmitcare
+      
+      # Security Configuration
+      SECRET_KEY: ${SECRET_KEY:-dev_secret_key_change_in_production}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 480
+      
+      # Application Configuration
+      DEBUG: ${DEBUG:-true}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      
+      # CORS Configuration
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      
+      # ML Model Configuration
+      MODEL_PATH: /app/data/models
+      
+      # Logging Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Hot reload for development - mount source code
+      - ./backend:/app
+      # Preserve Python packages (don't overwrite with local)
+      - backend_node_modules:/app/node_modules
+      # Persistent storage for ML models
+      - ml_models:/app/data/models
+      # Persistent storage for datasets
+      - datasets:/app/data/datasets
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    networks:
+      - readmitcare-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: readmitcare-frontend
+    environment:
+      # API Configuration
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      
+      # Development Configuration
+      VITE_DEV_SERVER_PORT: 5173
+      
+      # Feature Flags
+      VITE_ENABLE_MONITORING: ${VITE_ENABLE_MONITORING:-true}
+      VITE_ENABLE_FAIRNESS: ${VITE_ENABLE_FAIRNESS:-true}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      # Hot reload for development - mount source code
+      - ./frontend:/app
+      # Preserve node_modules (don't overwrite with local)
+      - frontend_node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    networks:
+      - readmitcare-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Named Volumes for Data Persistence
+volumes:
+  # PostgreSQL data persistence
+  postgres_data:
+    driver: local
+  
+  # ML models storage
+  ml_models:
+    driver: local
+  
+  # Training/test datasets storage
+  datasets:
+    driver: local
+  
+  # Backend dependencies (preserved across mounts)
+  backend_node_modules:
+    driver: local
+  
+  # Frontend dependencies (preserved across mounts)
+  frontend_node_modules:
+    driver: local
+
+# Custom Network for Service Communication
+networks:
+  readmitcare-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

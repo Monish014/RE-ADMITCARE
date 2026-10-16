@@ -1,0 +1,34 @@
+# FastAPI and web server dependencies
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# Database dependencies
+sqlalchemy==2.0.35
+asyncpg==0.29.0
+aiosqlite==0.20.0
+alembic==1.13.2
+
+# Authentication and security
+pyjwt==2.9.0
+bcrypt==4.2.0
+passlib==1.7.4
+python-jose[cryptography]==3.3.0
+
+# Data validation
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Machine learning
+xgboost==2.1.1
+scikit-learn==1.5.2
+shap==0.45.1
+numpy==1.26.4
+pandas==2.2.3
+
+# Background jobs
+apscheduler==3.10.4
+
+# Utilities
+python-dotenv==1.0.1
+faker==24.1.0
